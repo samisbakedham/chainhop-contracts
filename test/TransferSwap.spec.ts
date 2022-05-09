@@ -79,7 +79,15 @@ describe('transferWithSwap', () => {
 
     await expect(tx)
       .to.emit(c.xswap, 'RequestSent')
-      .withArgs(expectId, expectXferId, desc.dstChainId, amountIn, c.tokenA.address, c.tokenB.address);
+      .withArgs(
+        expectId,
+        expectXferId,
+        desc.dstChainId,
+        amountIn,
+        c.tokenA.address,
+        c.tokenB.address,
+        c.receiver.address
+      );
 
     const senderBalAfter = await c.tokenA.balanceOf(c.sender.address);
     const senderBalDiff = senderBal.sub(senderBalAfter);
@@ -102,7 +110,45 @@ describe('transferWithSwap', () => {
         desc.maxBridgeSlippage
       );
   });
-  it('should swap and transfer with Uniswap V2', async function () {
+  it('should swap and directly bridge tokens to receiver with Uniswap V2 (no dst swap)', async function () {
+    const amountIn = parseUnits('100');
+    const srcSwaps = utils.buildUniV2Swaps(c, amountIn);
+    const feeSig = await utils.signFee(c);
+    const desc = await utils.buildTransferDesc(c, feeSig, { receiver: c.sender.address });
+    await c.tokenA.connect(c.sender).approve(c.xswap.address, amountIn);
+    const tx = await c.xswap
+      .connect(c.sender)
+      .transferWithSwap(c.receiver.address, desc, srcSwaps, [], { value: 1000 });
+    const expectId = utils.computeId(c.sender.address, c.sender.address, c.chainId, desc.nonce);
+    const expectXferId = utils.computeTransferId(c, { amount: utils.slipUniV2(amountIn), receiver: c.sender.address });
+    await expect(tx)
+      .to.emit(c.xswap, 'RequestSent')
+      .withArgs(
+        expectId,
+        expectXferId,
+        desc.dstChainId,
+        amountIn,
+        c.tokenA.address,
+        c.tokenB.address,
+        c.sender.address
+      );
+    const expectedSendAmt = utils.slipUniV2(amountIn);
+    const srcXferId = keccak256(
+      ['address', 'address', 'address', 'uint256', 'uint64', 'uint64', 'uint64'],
+      [c.xswap.address, c.sender.address, c.tokenB.address, expectedSendAmt, desc.dstChainId, desc.nonce, c.chainId]
+    );
+    await expect(tx).to.emit(c.bridge, 'Send').withArgs(
+      srcXferId,
+      c.xswap.address,
+      c.sender.address, // sender receives bridge out token because there is no dst swap
+      c.tokenB.address,
+      expectedSendAmt,
+      desc.dstChainId,
+      desc.nonce,
+      desc.maxBridgeSlippage
+    );
+  });
+  it('should swap and transfer with Uniswap V2 (has dst swap)', async function () {
     const amountIn = parseUnits('100');
     const srcSwaps = utils.buildUniV2Swaps(c, amountIn);
     const feeSig = await utils.signFee(c);
@@ -111,12 +157,20 @@ describe('transferWithSwap', () => {
     await c.tokenA.connect(c.sender).approve(c.xswap.address, amountIn);
     const tx = await c.xswap
       .connect(c.sender)
-      .transferWithSwap(c.receiver.address, desc, srcSwaps, [], { value: 1000 });
+      .transferWithSwap(c.receiver.address, desc, srcSwaps, srcSwaps, { value: 1000 });
     const expectId = utils.computeId(c.sender.address, c.receiver.address, c.chainId, desc.nonce);
     const expectXferId = utils.computeTransferId(c, { amount: utils.slipUniV2(amountIn) });
     await expect(tx)
       .to.emit(c.xswap, 'RequestSent')
-      .withArgs(expectId, expectXferId, desc.dstChainId, amountIn, c.tokenA.address, c.tokenB.address);
+      .withArgs(
+        expectId,
+        expectXferId,
+        desc.dstChainId,
+        amountIn,
+        c.tokenA.address,
+        c.tokenB.address,
+        c.receiver.address
+      );
 
     const expectedSendAmt = utils.slipUniV2(amountIn);
     const srcXferId = keccak256(
@@ -136,7 +190,7 @@ describe('transferWithSwap', () => {
         desc.maxBridgeSlippage
       );
   });
-  it('should swap and transfer with Uniswap V2 (native in)', async function () {
+  it('should swap and transfer with Uniswap V2 (native in, has dst swap)', async function () {
     const amountIn = parseUnits('1');
     const srcSwaps = utils.buildUniV2Swaps(c, amountIn, { tokenIn: c.weth.address });
     const feeSig = await utils.signFee(c, { tokenIn: c.weth.address, amountIn: amountIn });
@@ -144,12 +198,20 @@ describe('transferWithSwap', () => {
 
     const tx = await c.xswap
       .connect(c.sender)
-      .transferWithSwap(c.receiver.address, desc, srcSwaps, [], { value: amountIn.add(1000) });
+      .transferWithSwap(c.receiver.address, desc, srcSwaps, srcSwaps, { value: amountIn.add(1000) });
     const expectId = utils.computeId(c.sender.address, c.receiver.address, c.chainId, desc.nonce);
     const expectXferId = utils.computeTransferId(c, { amount: utils.slipUniV2(amountIn) });
     await expect(tx)
       .to.emit(c.xswap, 'RequestSent')
-      .withArgs(expectId, expectXferId, desc.dstChainId, amountIn, c.weth.address, c.tokenB.address);
+      .withArgs(
+        expectId,
+        expectXferId,
+        desc.dstChainId,
+        amountIn,
+        c.weth.address,
+        c.tokenB.address,
+        c.receiver.address
+      );
 
     const expectedSendAmt = utils.slipUniV2(amountIn);
     const srcXferId = keccak256(
@@ -169,7 +231,7 @@ describe('transferWithSwap', () => {
         desc.maxBridgeSlippage
       );
   });
-  it('should swap and transfer with Curve Pool', async function () {
+  it('should swap and transfer with Curve Pool (has dst swap)', async function () {
     const amountIn = parseUnits('100');
     const srcSwaps = utils.buildCurveSwaps(c, amountIn);
     const feeSig = await utils.signFee(c);
@@ -178,13 +240,21 @@ describe('transferWithSwap', () => {
     await c.tokenA.connect(c.sender).approve(c.xswap.address, amountIn);
     const tx = await c.xswap
       .connect(c.sender)
-      .transferWithSwap(c.receiver.address, desc, srcSwaps, [], { value: 1000 });
+      .transferWithSwap(c.receiver.address, desc, srcSwaps, srcSwaps, { value: 1000 });
     const expectId = utils.computeId(c.sender.address, c.receiver.address, c.chainId, desc.nonce);
     const expectedSendAmt = utils.slipCurve(amountIn);
     const expectXferId = utils.computeTransferId(c, { amount: expectedSendAmt });
     await expect(tx)
       .to.emit(c.xswap, 'RequestSent')
-      .withArgs(expectId, expectXferId, desc.dstChainId, amountIn, c.tokenA.address, c.tokenB.address);
+      .withArgs(
+        expectId,
+        expectXferId,
+        desc.dstChainId,
+        amountIn,
+        c.tokenA.address,
+        c.tokenB.address,
+        c.receiver.address
+      );
 
     const srcXferId = keccak256(
       ['address', 'address', 'address', 'uint256', 'uint64', 'uint64', 'uint64'],

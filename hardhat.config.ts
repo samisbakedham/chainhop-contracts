@@ -125,9 +125,10 @@ const config: HardhatUserConfig = {
   defaultNetwork: 'hardhat',
   networks: {
     hardhat: {
+      // chainId: 1231412312412412, // placeholder for sed to replace
       // forking: {
-      //   url: 'https://eth-goerli.alchemyapi.io/v2/mERHmS0nJJ-3O3th4bOkVVSOjMrtoluG'
-      //   blockNumber: 6519148
+      //   url: 'networks.hardhat.forking.url', // placeholder for sed to replace
+      //   blockNumber: 927838194710231 // placeholder for sed to replace
       // }
     },
     localhost: { timeout: 600000 },
